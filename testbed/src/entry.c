@@ -1,5 +1,5 @@
 // TODO: remove this
-#include <platform/platform.h>
+#include <core/kmemory.h>
 #include "game.h"
 #include <entry.h>
 // Definition of function to create game
@@ -15,7 +15,7 @@ b8 create_game(game* out_game) {
     out_game->render = game_render;
 
     // Create the game state
-    out_game->state = platform_allocate(sizeof(game_state), FALSE);
+    out_game->state = kallocate(sizeof(game_state), MEMORY_TAG_GAME);
 
     return TRUE;
 }
