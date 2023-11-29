@@ -116,6 +116,7 @@ b8 vulkan_renderer_backend_initialize(renderer_backend* backend, const char* app
 }
 
 void vulkan_renderer_backend_shutdown(renderer_backend* backend) {
+#if defined(_DEBUG)
     KDEBUG("Destroying vulkan debugger...");
     if (context.debug_messenger) {
         PFN_vkDestroyDebugUtilsMessengerEXT func =
@@ -125,6 +126,7 @@ void vulkan_renderer_backend_shutdown(renderer_backend* backend) {
 
     KDEBUG("Destroying vulkan instance...");
     vkDestroyInstance(context.instance, context.allocator);
+#endif
 }
 
 void vulkan_renderer_backend_on_resized(renderer_backend* backend, u16 width, u16 height) {
