@@ -1,4 +1,5 @@
 #include "platform/platform.h"
+#include "containers/darray.h"
 
 // Windows platform layer
 #if KPLATFORM_WINDOWS
@@ -199,6 +200,10 @@ f64 platform_get_absolute_time() {
 
 void platform_sleep(u64 ms) {
     Sleep(ms);
+}
+
+void platform_get_required_extension_names(const char*** names_darray) {
+    darray_push(*names_darray, &"VK_KHR_win32_surface");
 }
 
 LRESULT CALLBACK win32_process_message(HWND hwnd, u32 msg, WPARAM w_param, LPARAM l_param) {

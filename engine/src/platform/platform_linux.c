@@ -5,6 +5,7 @@
 
 #include "core/logger.h"
 #include "core/event.h"
+#include "containers/darray.h"
 #include "core/input.h"
 
 #include <xcb/xcb.h>
@@ -305,6 +306,10 @@ void platform_sleep(u64 ms) {
     }
     usleep((ms % 1000) * 1000);
 #endif
+}
+
+void platform_get_required_extension_names(const char*** names_darray) {
+    darray_push(*names_darray, &"VK_KHR_xcb_surface");  // VK_KHR_xlib_surface?
 }
 
 // Key translation
