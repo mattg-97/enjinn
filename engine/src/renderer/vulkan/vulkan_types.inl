@@ -10,11 +10,6 @@
         KASSERT(expr == VK_SUCCESS); \
     }
 
-typedef struct vulkan_device {
-    VkPhysicalDevice physical_device;
-    VkDevice logical_device;
-} vulkan_device;
-
 typedef struct vulkan_swapchain_support_info {
     VkSurfaceCapabilitiesKHR capabilities;
     u32 format_count;
@@ -22,6 +17,18 @@ typedef struct vulkan_swapchain_support_info {
     u32 present_mode_count;
     VkPresentModeKHR* present_modes;
 } vulkan_swapchain_support_info;
+
+typedef struct vulkan_device {
+    VkPhysicalDevice physical_device;
+    VkDevice logical_device;
+    vulkan_swapchain_support_info swapchain_support;
+    i32 graphics_queue_index;
+    i32 present_queue_index;
+    i32 transfer_queue_index;
+    VkPhysicalDeviceProperties properties;
+    VkPhysicalDeviceFeatures features;
+    VkPhysicalDeviceMemoryProperties memory;
+} vulkan_device;
 
 typedef struct vulkan_context {
     VkInstance instance;
