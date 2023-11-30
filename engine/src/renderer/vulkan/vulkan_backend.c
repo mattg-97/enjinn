@@ -1,10 +1,19 @@
 #include "vulkan_backend.h"
-#include "core/logger.h"
+
 #include "vulkan_types.inl"
-#include "core/kstring.h"
-#include "containers/darray.h"
 #include "vulkan_platform.h"
 #include "vulkan_device.h"
+#include "vulkan_swapchain.h"
+
+#include "core/logger.h"
+#include "core/kstring.h"
+
+#include "containers/darray.h"
+
+#include "platform/platform.h"
+
+// static Vulkan context
+static vulkan_context context;
 
 VKAPI_ATTR VkBool32 VKAPI_CALL vk_debug_callback(
     VkDebugUtilsMessageSeverityFlagBitsEXT message_severity,
@@ -12,19 +21,21 @@ VKAPI_ATTR VkBool32 VKAPI_CALL vk_debug_callback(
     const VkDebugUtilsMessengerCallbackDataEXT* callback_data,
     void* user_data);
 
-// Static Vulkan context
-static vulkan_context context;
+i32 find_memory_index(u32 type_filter, u32 property_flags);
 
 b8 vulkan_renderer_backend_initialize(renderer_backend* backend, const char* application_name, struct platform_state* plat_state) {
-    // TODO: Custom allocator
+    // Function pointers
+    context.find_memory_index = find_memory_index;
+
+    // TODO: custom allocator.
     context.allocator = 0;
 
-    // Setup Vulkan Instance
+    // Setup Vulkan instance.
     VkApplicationInfo app_info = {VK_STRUCTURE_TYPE_APPLICATION_INFO};
     app_info.apiVersion = VK_API_VERSION_1_2;
     app_info.pApplicationName = application_name;
     app_info.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
-    app_info.pEngineName = "Enjinn";
+    app_info.pEngineName = "Kohi Engine";
     app_info.engineVersion = VK_MAKE_VERSION(1, 0, 0);
 
     VkInstanceCreateInfo create_info = {VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
@@ -33,11 +44,11 @@ b8 vulkan_renderer_backend_initialize(renderer_backend* backend, const char* app
     // Obtain a list of required extensions
     const char** required_extensions = darray_create(const char*);
     darray_push(required_extensions, &VK_KHR_SURFACE_EXTENSION_NAME);  // Generic surface extension
-    platform_get_required_extension_names(&required_extensions);       // Platform specific extensions
+    platform_get_required_extension_names(&required_extensions);       // Platform-specific extension(s)
 #if defined(_DEBUG)
-    darray_push(required_extensions, &VK_EXT_DEBUG_UTILS_EXTENSION_NAME);  // Debug utilities
+    darray_push(required_extensions, &VK_EXT_DEBUG_UTILS_EXTENSION_NAME);  // debug utilities
 
-    KDEBUG("Required Extensions: ");
+    KDEBUG("Required extensions:");
     u32 length = darray_length(required_extensions);
     for (u32 i = 0; i < length; ++i) {
         KDEBUG(required_extensions[i]);
@@ -47,14 +58,16 @@ b8 vulkan_renderer_backend_initialize(renderer_backend* backend, const char* app
     create_info.enabledExtensionCount = darray_length(required_extensions);
     create_info.ppEnabledExtensionNames = required_extensions;
 
-    // Validation layers
+    // Validation layers.
     const char** required_validation_layer_names = 0;
     u32 required_validation_layer_count = 0;
 
+// If validation should be done, get a list of the required validation layert names
+// and make sure they exist. Validation layers should only be enabled on non-release builds.
 #if defined(_DEBUG)
     KINFO("Validation layers enabled. Enumerating...");
 
-    // The list of validation layers required
+    // The list of validation layers required.
     required_validation_layer_names = darray_create(const char*);
     darray_push(required_validation_layer_names, &"VK_LAYER_KHRONOS_validation");
     required_validation_layer_count = darray_length(required_validation_layer_names);
@@ -65,7 +78,7 @@ b8 vulkan_renderer_backend_initialize(renderer_backend* backend, const char* app
     VkLayerProperties* available_layers = darray_reserve(VkLayerProperties, available_layer_count);
     VK_CHECK(vkEnumerateInstanceLayerProperties(&available_layer_count, available_layers));
 
-    // Verify all required layers are available
+    // Verify all required layers are available.
     for (u32 i = 0; i < required_validation_layer_count; ++i) {
         KINFO("Searching for layer: %s...", required_validation_layer_names[i]);
         b8 found = FALSE;
@@ -89,21 +102,20 @@ b8 vulkan_renderer_backend_initialize(renderer_backend* backend, const char* app
     create_info.ppEnabledLayerNames = required_validation_layer_names;
 
     VK_CHECK(vkCreateInstance(&create_info, context.allocator, &context.instance));
-    KINFO("Vulkan instance created.");
+    KINFO("Vulkan Instance created.");
 
-    // Debugger specifically for Vulkan
+    // Debugger
 #if defined(_DEBUG)
     KDEBUG("Creating Vulkan debugger...");
     u32 log_severity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT |
-                       VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT;  //|
-                                                                         // VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT |
-                                                                         // VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT;
+                       VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
+                       VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT;  //|
+                                                                      //    VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT;
 
     VkDebugUtilsMessengerCreateInfoEXT debug_create_info = {VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT};
     debug_create_info.messageSeverity = log_severity;
     debug_create_info.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT | VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT;
     debug_create_info.pfnUserCallback = vk_debug_callback;
-    debug_create_info.pUserData = 0;
 
     PFN_vkCreateDebugUtilsMessengerEXT func =
         (PFN_vkCreateDebugUtilsMessengerEXT)vkGetInstanceProcAddr(context.instance, "vkCreateDebugUtilsMessengerEXT");
@@ -112,36 +124,55 @@ b8 vulkan_renderer_backend_initialize(renderer_backend* backend, const char* app
     KDEBUG("Vulkan debugger created.");
 #endif
 
-    // Surface Creation
-    KDEBUG("Creating vulkan surface...");
+    // Surface
+    KDEBUG("Creating Vulkan surface...");
     if (!platform_create_vulkan_surface(plat_state, &context)) {
-        KERROR("Failed to create platform surface.");
+        KERROR("Failed to create platform surface!");
         return FALSE;
     }
     KDEBUG("Vulkan surface created.");
 
     // Device creation
     if (!vulkan_device_create(&context)) {
-        KERROR("Failed to create device.");
+        KERROR("Failed to create device!");
         return FALSE;
     }
 
-    KINFO("Vulkan Renderer initialized successfully.");
+    // Swapchain
+    vulkan_swapchain_create(
+        &context,
+        context.framebuffer_width,
+        context.framebuffer_height,
+        &context.swapchain);
+
+    KINFO("Vulkan renderer initialized successfully.");
     return TRUE;
 }
 
 void vulkan_renderer_backend_shutdown(renderer_backend* backend) {
-#if defined(_DEBUG)
-    KDEBUG("Destroying vulkan debugger...");
+    // Destroy in the opposite order of creation.
+
+    // Swapchain
+    vulkan_swapchain_destroy(&context, &context.swapchain);
+
+    KDEBUG("Destroying Vulkan device...");
+    vulkan_device_destroy(&context);
+
+    KDEBUG("Destroying Vulkan surface...");
+    if (context.surface) {
+        vkDestroySurfaceKHR(context.instance, context.surface, context.allocator);
+        context.surface = 0;
+    }
+
+    KDEBUG("Destroying Vulkan debugger...");
     if (context.debug_messenger) {
         PFN_vkDestroyDebugUtilsMessengerEXT func =
             (PFN_vkDestroyDebugUtilsMessengerEXT)vkGetInstanceProcAddr(context.instance, "vkDestroyDebugUtilsMessengerEXT");
         func(context.instance, context.debug_messenger, context.allocator);
     }
 
-    KDEBUG("Destroying vulkan instance...");
+    KDEBUG("Destroying Vulkan instance...");
     vkDestroyInstance(context.instance, context.allocator);
-#endif
 }
 
 void vulkan_renderer_backend_on_resized(renderer_backend* backend, u16 width, u16 height) {
@@ -161,6 +192,7 @@ VKAPI_ATTR VkBool32 VKAPI_CALL vk_debug_callback(
     const VkDebugUtilsMessengerCallbackDataEXT* callback_data,
     void* user_data) {
     switch (message_severity) {
+        default:
         case VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT:
             KERROR(callback_data->pMessage);
             break;
@@ -173,8 +205,21 @@ VKAPI_ATTR VkBool32 VKAPI_CALL vk_debug_callback(
         case VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT:
             KTRACE(callback_data->pMessage);
             break;
-        default:
-            break;
     }
     return VK_FALSE;
+}
+
+i32 find_memory_index(u32 type_filter, u32 property_flags) {
+    VkPhysicalDeviceMemoryProperties memory_properties;
+    vkGetPhysicalDeviceMemoryProperties(context.device.physical_device, &memory_properties);
+
+    for (u32 i = 0; i < memory_properties.memoryTypeCount; ++i) {
+        // Check each memory type to see if its bit is set to 1.
+        if (type_filter & (1 << i) && (memory_properties.memoryTypes[i].propertyFlags & property_flags) == property_flags) {
+            return i;
+        }
+    }
+
+    KWARN("Unable to find suitable memory type!");
+    return -1;
 }
